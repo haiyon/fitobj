@@ -1,0 +1,7 @@
+.idea/
+.vscode/
+.DS_Store
+testdata/
+fitobj
+diagnostic.json
+diagnostic_output.json

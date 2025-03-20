@@ -1,0 +1,37 @@
+{
+  "person": {
+    "name": "John Doe",
+    "age": 30,
+    "email": "john.doe@example.com",
+    "address": {
+      "street": "123 Main St",
+      "city": "Anytown",
+      "state": "NY",
+      "zip": "10001",
+      "country": {
+        "name": "United States",
+        "code": "US"
+      }
+    },
+    "phones": [
+      {
+        "type": "home",
+        "number": "555-1234"
+      },
+      {
+        "type": "work",
+        "number": "555-5678"
+      }
+    ]
+  },
+  "company": {
+    "name": "Acme Inc",
+    "department": {
+      "name": "Engineering",
+      "manager": {
+        "name": "Jane Smith",
+        "id": "JS001"
+      }
+    }
+  }
+}

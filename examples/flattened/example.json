@@ -1,0 +1,19 @@
+{
+  "company.department.manager.id": "JS001",
+  "company.department.manager.name": "Jane Smith",
+  "company.department.name": "Engineering",
+  "company.name": "Acme Inc",
+  "person.address.city": "Anytown",
+  "person.address.country.code": "US",
+  "person.address.country.name": "United States",
+  "person.address.state": "NY",
+  "person.address.street": "123 Main St",
+  "person.address.zip": "10001",
+  "person.age": 30,
+  "person.email": "john.doe@example.com",
+  "person.name": "John Doe",
+  "person.phones.0.number": "555-1234",
+  "person.phones.0.type": "home",
+  "person.phones.1.number": "555-5678",
+  "person.phones.1.type": "work"
+}
