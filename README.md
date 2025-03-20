@@ -14,7 +14,7 @@ A lightweight Go tool for flattening and unflattening nested JSON objects.
 
 ```bash
 # Install using go
-go install github.com/haiyon/fitobj@latest
+go install github.com/haiyon/fitobj
 
 # Or clone and build
 git clone https://github.com/haiyon/fitobj.git
