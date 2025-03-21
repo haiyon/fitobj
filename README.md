@@ -69,7 +69,7 @@ flatObj := fitter.FlattenMap(nestedObj, "")
 // With custom options
 options := fitter.DefaultFlattenOptions()
 options.Separator = "__"
-options.ArrayFormatting = "bracket" 
+options.ArrayFormatting = "bracket"
 customFlatObj := fitter.FlattenMapWithOptions(nestedObj, "", options)
 
 // Unflatten back to nested structure

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"runtime/pprof"
 
 	"github.com/haiyon/fitobj/api"
 	"github.com/haiyon/fitobj/fitter"
@@ -31,9 +30,6 @@ var (
 	// Performance
 	workers    = flag.Int("workers", runtime.NumCPU(), "Number of worker goroutines for parallel processing")
 	bufferSize = flag.Int("buffer", 16, "Initial buffer size for maps to reduce allocations")
-	// Profiling
-	cpuProfile = flag.String("cpuprofile", "", "Write CPU profile to file")
-	memProfile = flag.String("memprofile", "", "Write memory profile to file")
 )
 
 func main() {
@@ -44,21 +40,6 @@ func main() {
 	if *versionFlag {
 		fmt.Printf("fitobj version is %s\n", version)
 		return
-	}
-
-	// Start CPU profiling if requested
-	if *cpuProfile != "" {
-		f, err := os.Create(*cpuProfile)
-		if err != nil {
-			fmt.Printf("Could not create CPU profile: %v\n", err)
-			os.Exit(1)
-		}
-		defer f.Close()
-		if err := pprof.StartCPUProfile(f); err != nil {
-			fmt.Printf("Could not start CPU profile: %v\n", err)
-			os.Exit(1)
-		}
-		defer pprof.StopCPUProfile()
 	}
 
 	// Processing options
@@ -116,18 +97,5 @@ func main() {
 	if err := processor.ProcessDirectoryWithOptions(*inputDir, *outputDir, *reverse, processorOptions); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
-	}
-
-	// Write memory profile if requested
-	if *memProfile != "" {
-		f, err := os.Create(*memProfile)
-		if err != nil {
-			fmt.Printf("Could not create memory profile: %v\n", err)
-		}
-		defer f.Close()
-		runtime.GC() // Get up-to-date statistics
-		if err := pprof.WriteHeapProfile(f); err != nil {
-			fmt.Printf("Could not write memory profile: %v\n", err)
-		}
 	}
 }
