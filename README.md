@@ -19,7 +19,7 @@ go install github.com/haiyon/fitobj
 # Or clone and build
 git clone https://github.com/haiyon/fitobj.git
 cd fitobj
-go build
+go build -ldflags "-X main.version=0.1.0"
 ```
 
 ## Usage
