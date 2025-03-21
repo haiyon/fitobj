@@ -78,7 +78,6 @@ func main() {
 
 	// File processing mode
 	if *inputDir == "" || *outputDir == "" {
-		fmt.Println("Error: Input and output directories must be specified")
 		fmt.Println("Usage: fitobj -input=<input-dir> -output=<output-dir> [-reverse] [-separator=.] [-array-format=index|bracket]")
 		flag.PrintDefaults()
 		os.Exit(1)
