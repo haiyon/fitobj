@@ -35,7 +35,7 @@ go build
 #### Unflatten JSON files
 
 ```bash
-./fitobj -input=./examples/flattened -output=./examples/nested -unflatten
+./fitobj -input=./examples/flattened -output=./examples/nested -reverse
 ```
 
 #### Custom options
@@ -55,7 +55,7 @@ Example request:
 ```bash
 curl -X POST http://localhost:8080/process \
   -H "Content-Type: application/json" \
-  -d '{"data": {"user": {"name": "John", "address": {"city": "New York"}}}, "unflatten": false}'
+  -d '{"data": {"user": {"name": "John", "address": {"city": "New York"}}}, "reverse": false}'
 ```
 
 ### Library Usage

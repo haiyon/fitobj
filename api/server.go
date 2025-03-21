@@ -30,7 +30,7 @@ func DefaultOptions() Options {
 // Request defines the structure for API requests.
 type Request struct {
 	Data        map[string]any `json:"data"`                  // JSON data to process
-	Unflatten   bool           `json:"unflatten"`             // Whether to unflatten (true) or flatten (false)
+	Reverse     bool           `json:"reverse"`               // Whether to reverse the transformation
 	Separator   string         `json:"separator,omitempty"`   // Custom separator (optional)
 	ArrayFormat string         `json:"arrayFormat,omitempty"` // Array format: "index" or "bracket" (optional)
 }
@@ -108,7 +108,7 @@ func (s *server) ProcessHandler(w http.ResponseWriter, r *http.Request) {
 	// Process the data
 	var result map[string]any
 
-	if request.Unflatten {
+	if request.Reverse {
 		// For unflattening, pass the data directly
 		result = fitter.UnflattenMapWithOptions(request.Data, unflattenOpts)
 	} else {
