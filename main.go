@@ -8,6 +8,7 @@ import (
 
 	"github.com/haiyon/fitobj/api"
 	"github.com/haiyon/fitobj/fitter"
+	"github.com/haiyon/fitobj/i18n"
 	"github.com/haiyon/fitobj/processor"
 )
 
@@ -30,6 +31,10 @@ var (
 	// Performance
 	workers    = flag.Int("workers", runtime.NumCPU(), "Number of worker goroutines for parallel processing")
 	bufferSize = flag.Int("buffer", 16, "Initial buffer size for maps to reduce allocations")
+	// i18n feature
+	i18nMode  = flag.Bool("i18n", false, "Extract and compare i18n keys")
+	sourceDir = flag.String("source-dir", "", "Source directory to extract t() function calls from")
+	jsonPath  = flag.String("json-path", "", "Path to JSON file or directory containing translation keys")
 )
 
 func main() {
@@ -57,6 +62,52 @@ func main() {
 		Workers:       *workers,
 		FlattenOpts:   flattenOpts,
 		UnflattenOpts: unflattenOpts,
+	}
+
+	// i18n mode
+	if *i18nMode {
+		if *sourceDir == "" || *jsonPath == "" {
+			fmt.Println("Usage: fitobj -i18n -source-dir=<source-dir> -json-path=<json-path>")
+			flag.PrintDefaults()
+			os.Exit(1)
+		}
+
+		fmt.Printf("Extracting and comparing i18n keys...\n")
+		fmt.Printf("Source directory: %s\n", *sourceDir)
+		fmt.Printf("JSON path: %s\n", *jsonPath)
+
+		// Extract keys from source files
+		sourceKeys, err := i18n.ExtractKeysFromDir(*sourceDir)
+		if err != nil {
+			fmt.Printf("Error extracting keys from source: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Extract keys from JSON files
+		jsonKeys, err := i18n.ExtractKeysFromJSONDir(*jsonPath)
+		if err != nil {
+			fmt.Printf("Error extracting keys from JSON: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Compare keys
+		missingInJSON, unusedInSource := i18n.CompareKeys(sourceKeys, jsonKeys)
+
+		// Print results
+		fmt.Printf("\n🔍 Total keys in source: %d\n", len(sourceKeys))
+		fmt.Printf("📚 Total keys in JSON: %d\n", len(jsonKeys))
+
+		fmt.Printf("\n❌ Missing in JSON (%d):\n", len(missingInJSON))
+		for _, key := range missingInJSON {
+			fmt.Println(key)
+		}
+
+		fmt.Printf("\n🟡 Unused in Source (%d):\n", len(unusedInSource))
+		for _, key := range unusedInSource {
+			fmt.Println(key)
+		}
+
+		return
 	}
 
 	// API server mode

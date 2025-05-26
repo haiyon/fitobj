@@ -1,6 +1,6 @@
 # fitobj
 
-A lightweight Go tool for flattening and unflattening nested JSON objects.
+A lightweight Go tool for flattening and unflattening nested JSON objects, with i18n key management.
 
 ## Features
 
@@ -9,6 +9,7 @@ A lightweight Go tool for flattening and unflattening nested JSON objects.
 - **Batch processing** for multiple JSON files
 - **API mode** with RESTful endpoints
 - **Parallel processing** for improved performance
+- **i18n key management** for detecting missing or unused translation keys
 
 ## Installation
 
@@ -44,6 +45,13 @@ go build -ldflags "-X main.version=0.1.0"
 ./fitobj -input=./nested -output=./flat -separator="__" -array-format=bracket -workers=8
 ```
 
+#### i18n Key Management
+
+```bash
+# Extract and compare i18n keys
+./fitobj -i18n -source-dir=./src -json-path=./translations/en.json
+```
+
 ### API Server
 
 ```bash
@@ -74,6 +82,16 @@ customFlatObj := fitter.FlattenMapWithOptions(nestedObj, "", options)
 
 // Unflatten back to nested structure
 nestedAgain := fitter.UnflattenMap(flatObj)
+
+// i18n key management
+import "github.com/haiyon/fitobj/i18n"
+
+// Extract keys from source and JSON
+sourceKeys, _ := i18n.ExtractKeysFromDir("./src")
+jsonKeys, _ := i18n.ExtractKeysFromJSONDir("./translations")
+
+// Compare keys to find missing or unused ones
+missingInJSON, unusedInSource := i18n.CompareKeys(sourceKeys, jsonKeys)
 ```
 
 ## Examples
@@ -112,6 +130,26 @@ nestedAgain := fitter.UnflattenMap(flatObj)
   "person.addresses[0].type": "home",
   "person.addresses[0].street": "123 Main St"
 }
+```
+
+### i18n Key Management
+
+Extract and compare translation keys between source code and JSON files:
+
+```bash
+./fitobj -i18n -source-dir=./examples/i18n/source -json-path=./examples/i18n/translations
+
+🔍 Total keys in source: 15
+📚 Total keys in JSON: 16
+
+❌ Missing in JSON (2):
+buttons.getStarted
+footer.terms
+
+🟡 Unused in Source (3):
+nav.products
+buttons.cancel
+footer.privacy
 ```
 
 > Note: This project has been optimized with the assistance of Claude.
