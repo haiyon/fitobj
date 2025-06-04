@@ -158,3 +158,141 @@ func CompareKeys(sourceKeys, jsonKeys map[string]bool) ([]string, []string) {
 
 	return missingInJSON, unusedInSource
 }
+
+// RemoveKeysFromPath removes specified keys from a nested JSON structure in the given path
+func RemoveKeysFromPath(value map[string]any, keyPath string, separator string) bool {
+	parts := splitKeyPath(keyPath, separator)
+	if len(parts) == 0 {
+		return false
+	}
+
+	// Navigate to the parent of the target key
+	current := value
+	for _, part := range parts[:len(parts)-1] {
+		if next, exists := current[part]; exists {
+			if nextMap, ok := next.(map[string]any); ok {
+				current = nextMap
+			} else {
+				// Path doesn't exist or isn't navigable
+				return false
+			}
+		} else {
+			// Path doesn't exist
+			return false
+		}
+	}
+
+	// Remove the target key
+	targetKey := parts[len(parts)-1]
+	if _, exists := current[targetKey]; exists {
+		delete(current, targetKey)
+		return true
+	}
+
+	return false
+}
+
+// splitKeyPath splits a key path by separator (e.g., "hello.world" -> ["hello", "world"])
+func splitKeyPath(keyPath, separator string) []string {
+	if keyPath == "" {
+		return []string{}
+	}
+
+	var parts []string
+	current := ""
+
+	for i := 0; i < len(keyPath); i++ {
+		if i+len(separator) <= len(keyPath) && keyPath[i:i+len(separator)] == separator {
+			if current != "" {
+				parts = append(parts, current)
+				current = ""
+			}
+			i += len(separator) - 1 // Skip separator
+		} else {
+			current += string(keyPath[i])
+		}
+	}
+
+	if current != "" {
+		parts = append(parts, current)
+	}
+
+	return parts
+}
+
+// CleanupUnusedKeys removes unused keys from JSON files in the specified path
+func CleanupUnusedKeys(jsonPath string, unusedKeys []string, separator string) error {
+	if len(unusedKeys) == 0 {
+		return nil
+	}
+
+	// Check if the path is a file or directory
+	fileInfo, err := os.Stat(jsonPath)
+	if err != nil {
+		return fmt.Errorf("failed to stat path: %v", err)
+	}
+
+	if fileInfo.IsDir() {
+		// Process all JSON files in the directory
+		entries, err := os.ReadDir(jsonPath)
+		if err != nil {
+			return fmt.Errorf("failed to read directory: %v", err)
+		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
+				fullPath := filepath.Join(jsonPath, entry.Name())
+				if err := cleanupJSONFile(fullPath, unusedKeys, separator); err != nil {
+					return fmt.Errorf("failed to cleanup file %s: %v", fullPath, err)
+				}
+			}
+		}
+	} else {
+		// Process a single JSON file
+		if err := cleanupJSONFile(jsonPath, unusedKeys, separator); err != nil {
+			return fmt.Errorf("failed to cleanup file %s: %v", jsonPath, err)
+		}
+	}
+
+	return nil
+}
+
+// cleanupJSONFile removes unused keys from a single JSON file
+func cleanupJSONFile(filePath string, unusedKeys []string, separator string) error {
+	// Read the JSON file
+	jsonData, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read JSON file: %v", err)
+	}
+
+	var jsonObj map[string]any
+	if err := json.Unmarshal(jsonData, &jsonObj); err != nil {
+		return fmt.Errorf("failed to parse JSON: %v", err)
+	}
+
+	// Remove unused keys
+	removedCount := 0
+	for _, key := range unusedKeys {
+		if RemoveKeysFromPath(jsonObj, key, separator) {
+			removedCount++
+		}
+	}
+
+	// Only write back if changes were made
+	if removedCount > 0 {
+		// Marshal back to JSON with proper formatting
+		updatedData, err := json.MarshalIndent(jsonObj, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %v", err)
+		}
+
+		// Write back to file
+		if err := os.WriteFile(filePath, updatedData, 0644); err != nil {
+			return fmt.Errorf("failed to write JSON file: %v", err)
+		}
+
+		fmt.Printf("✅ Removed %d unused keys from %s\n", removedCount, filePath)
+	}
+
+	return nil
+}

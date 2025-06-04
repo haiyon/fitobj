@@ -32,9 +32,10 @@ var (
 	workers    = flag.Int("workers", runtime.NumCPU(), "Number of worker goroutines for parallel processing")
 	bufferSize = flag.Int("buffer", 16, "Initial buffer size for maps to reduce allocations")
 	// i18n feature
-	i18nMode  = flag.Bool("i18n", false, "Extract and compare i18n keys")
-	sourceDir = flag.String("source-dir", "", "Source directory to extract t() function calls from")
-	jsonPath  = flag.String("json-path", "", "Path to JSON file or directory containing translation keys")
+	i18nMode      = flag.Bool("i18n", false, "Extract and compare i18n keys")
+	sourceDir     = flag.String("source-dir", "", "Source directory to extract t() function calls from")
+	jsonPath      = flag.String("json-path", "", "Path to JSON file or directory containing translation keys")
+	cleanupUnused = flag.Bool("cleanup", false, "Automatically remove unused keys from JSON files (use with -i18n)")
 )
 
 func main() {
@@ -67,7 +68,7 @@ func main() {
 	// i18n mode
 	if *i18nMode {
 		if *sourceDir == "" || *jsonPath == "" {
-			fmt.Println("Usage: fitobj -i18n -source-dir=<source-dir> -json-path=<json-path>")
+			fmt.Println("Usage: fitobj -i18n -source-dir=<source-dir> -json-path=<json-path> [-cleanup]")
 			flag.PrintDefaults()
 			os.Exit(1)
 		}
@@ -75,6 +76,9 @@ func main() {
 		fmt.Printf("Extracting and comparing i18n keys...\n")
 		fmt.Printf("Source directory: %s\n", *sourceDir)
 		fmt.Printf("JSON path: %s\n", *jsonPath)
+		if *cleanupUnused {
+			fmt.Printf("Cleanup mode: Enabled (unused keys will be removed)\n")
+		}
 
 		// Extract keys from source files
 		sourceKeys, err := i18n.ExtractKeysFromDir(*sourceDir)
@@ -107,7 +111,25 @@ func main() {
 			fmt.Println(key)
 		}
 
+		// Auto-cleanup unused keys if requested
+		if *cleanupUnused && len(unusedInSource) > 0 {
+			fmt.Printf("\n🧹 Cleaning up unused keys...\n")
+			if err := i18n.CleanupUnusedKeys(*jsonPath, unusedInSource, *separator); err != nil {
+				fmt.Printf("❌ Error during cleanup: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("✅ Cleanup completed successfully!\n")
+		} else if *cleanupUnused && len(unusedInSource) == 0 {
+			fmt.Printf("\n✅ No unused keys to cleanup!\n")
+		}
+
 		return
+	}
+
+	// Check if cleanup flag is used without i18n mode
+	if *cleanupUnused && !*i18nMode {
+		fmt.Println("Error: -cleanup flag can only be used with -i18n mode")
+		os.Exit(1)
 	}
 
 	// API server mode
