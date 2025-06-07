@@ -11,20 +11,18 @@ import (
 	"github.com/haiyon/fitobj/fitter"
 )
 
-// The pattern to match t('key') or t("key") function calls in source files
+// Pattern to match t('key') or t("key") function calls in source files
 var tPattern = regexp.MustCompile(`\bt\(\s*['"]([^'"]+?)['"]`)
 
 // ExtractKeysFromFile extracts all t() function call keys from a single file
 func ExtractKeysFromFile(filePath string) (map[string]bool, error) {
 	keys := make(map[string]bool)
 
-	// Read file content
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return keys, nil // Ignore read errors (e.g., binary files)
 	}
 
-	// Find all matches in the file content
 	matches := tPattern.FindAllSubmatch(content, -1)
 	for _, match := range matches {
 		if len(match) >= 2 {
@@ -39,20 +37,17 @@ func ExtractKeysFromFile(filePath string) (map[string]bool, error) {
 func ExtractKeysFromDir(rootDir string) (map[string]bool, error) {
 	keys := make(map[string]bool)
 
-	// Walk through all files in the directory recursively
 	err := filepath.WalkDir(rootDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
 		if !d.IsDir() {
-			// Extract keys from the file
 			fileKeys, err := ExtractKeysFromFile(path)
 			if err != nil {
-				return err // Propagate the error
+				return err
 			}
 
-			// Add the extracted keys to the result
 			for key := range fileKeys {
 				keys[key] = true
 			}
@@ -68,7 +63,6 @@ func ExtractKeysFromDir(rootDir string) (map[string]bool, error) {
 func ExtractKeysFromJSON(filePath string) (map[string]bool, error) {
 	keys := make(map[string]bool)
 
-	// Read and parse JSON file
 	jsonData, err := os.ReadFile(filePath)
 	if err != nil {
 		return keys, fmt.Errorf("failed to read JSON file: %v", err)
@@ -79,11 +73,9 @@ func ExtractKeysFromJSON(filePath string) (map[string]bool, error) {
 		return keys, fmt.Errorf("failed to parse JSON: %v", err)
 	}
 
-	// Flatten the JSON object to get all keys
 	options := fitter.DefaultFlattenOptions()
 	flattenedObj := fitter.FlattenMapWithOptions(jsonObj, "", options)
 
-	// Extract keys from the flattened object
 	for key := range flattenedObj {
 		keys[key] = true
 	}
@@ -95,14 +87,12 @@ func ExtractKeysFromJSON(filePath string) (map[string]bool, error) {
 func ExtractKeysFromJSONDir(jsonPath string) (map[string]bool, error) {
 	keys := make(map[string]bool)
 
-	// Check if the path is a file or directory
 	fileInfo, err := os.Stat(jsonPath)
 	if err != nil {
 		return keys, fmt.Errorf("failed to stat path: %v", err)
 	}
 
 	if fileInfo.IsDir() {
-		// Process all JSON files in the directory
 		entries, err := os.ReadDir(jsonPath)
 		if err != nil {
 			return keys, fmt.Errorf("failed to read directory: %v", err)
@@ -116,20 +106,17 @@ func ExtractKeysFromJSONDir(jsonPath string) (map[string]bool, error) {
 					return keys, err
 				}
 
-				// Add the extracted keys to the result
 				for key := range jsonKeys {
 					keys[key] = true
 				}
 			}
 		}
 	} else {
-		// Process a single JSON file
 		jsonKeys, err := ExtractKeysFromJSON(jsonPath)
 		if err != nil {
 			return keys, err
 		}
 
-		// Add the extracted keys to the result
 		for key := range jsonKeys {
 			keys[key] = true
 		}
@@ -142,14 +129,12 @@ func ExtractKeysFromJSONDir(jsonPath string) (map[string]bool, error) {
 func CompareKeys(sourceKeys, jsonKeys map[string]bool) ([]string, []string) {
 	var missingInJSON, unusedInSource []string
 
-	// Find keys missing in JSON
 	for key := range sourceKeys {
 		if !jsonKeys[key] {
 			missingInJSON = append(missingInJSON, key)
 		}
 	}
 
-	// Find keys unused in source
 	for key := range jsonKeys {
 		if !sourceKeys[key] {
 			unusedInSource = append(unusedInSource, key)
@@ -159,25 +144,37 @@ func CompareKeys(sourceKeys, jsonKeys map[string]bool) ([]string, []string) {
 	return missingInJSON, unusedInSource
 }
 
-// RemoveKeysFromPath removes specified keys from a nested JSON structure in the given path
+// RemoveKeysFromPath removes specified keys from a nested JSON structure
 func RemoveKeysFromPath(value map[string]any, keyPath string, separator string) bool {
 	parts := splitKeyPath(keyPath, separator)
 	if len(parts) == 0 {
 		return false
 	}
 
+	// Handle single part (top-level key)
+	if len(parts) == 1 {
+		if _, exists := value[parts[0]]; exists {
+			delete(value, parts[0])
+			return true
+		}
+		return false
+	}
+
 	// Navigate to the parent of the target key
 	current := value
+	parents := []map[string]any{value}
+	var parentKeys []string
+
 	for _, part := range parts[:len(parts)-1] {
 		if next, exists := current[part]; exists {
 			if nextMap, ok := next.(map[string]any); ok {
 				current = nextMap
+				parents = append(parents, current)
+				parentKeys = append(parentKeys, part)
 			} else {
-				// Path doesn't exist or isn't navigable
 				return false
 			}
 		} else {
-			// Path doesn't exist
 			return false
 		}
 	}
@@ -186,13 +183,24 @@ func RemoveKeysFromPath(value map[string]any, keyPath string, separator string) 
 	targetKey := parts[len(parts)-1]
 	if _, exists := current[targetKey]; exists {
 		delete(current, targetKey)
+
+		// Clean up empty parent objects from bottom to top
+		for i := len(parents) - 1; i > 0; i-- {
+			if len(parents[i]) == 0 {
+				parentKey := parentKeys[i-1]
+				delete(parents[i-1], parentKey)
+			} else {
+				break // Stop if parent is not empty
+			}
+		}
+
 		return true
 	}
 
 	return false
 }
 
-// splitKeyPath splits a key path by separator (e.g., "hello.world" -> ["hello", "world"])
+// splitKeyPath splits a key path by separator
 func splitKeyPath(keyPath, separator string) []string {
 	if keyPath == "" {
 		return []string{}
@@ -207,7 +215,7 @@ func splitKeyPath(keyPath, separator string) []string {
 				parts = append(parts, current)
 				current = ""
 			}
-			i += len(separator) - 1 // Skip separator
+			i += len(separator) - 1
 		} else {
 			current += string(keyPath[i])
 		}
@@ -226,14 +234,12 @@ func CleanupUnusedKeys(jsonPath string, unusedKeys []string, separator string) e
 		return nil
 	}
 
-	// Check if the path is a file or directory
 	fileInfo, err := os.Stat(jsonPath)
 	if err != nil {
 		return fmt.Errorf("failed to stat path: %v", err)
 	}
 
 	if fileInfo.IsDir() {
-		// Process all JSON files in the directory
 		entries, err := os.ReadDir(jsonPath)
 		if err != nil {
 			return fmt.Errorf("failed to read directory: %v", err)
@@ -248,7 +254,6 @@ func CleanupUnusedKeys(jsonPath string, unusedKeys []string, separator string) e
 			}
 		}
 	} else {
-		// Process a single JSON file
 		if err := cleanupJSONFile(jsonPath, unusedKeys, separator); err != nil {
 			return fmt.Errorf("failed to cleanup file %s: %v", jsonPath, err)
 		}
@@ -259,7 +264,6 @@ func CleanupUnusedKeys(jsonPath string, unusedKeys []string, separator string) e
 
 // cleanupJSONFile removes unused keys from a single JSON file
 func cleanupJSONFile(filePath string, unusedKeys []string, separator string) error {
-	// Read the JSON file
 	jsonData, err := os.ReadFile(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to read JSON file: %v", err)
@@ -270,28 +274,29 @@ func cleanupJSONFile(filePath string, unusedKeys []string, separator string) err
 		return fmt.Errorf("failed to parse JSON: %v", err)
 	}
 
-	// Remove unused keys
+	// Create a copy for modification
+	originalSize := len(jsonData)
 	removedCount := 0
+
 	for _, key := range unusedKeys {
 		if RemoveKeysFromPath(jsonObj, key, separator) {
 			removedCount++
 		}
 	}
 
-	// Only write back if changes were made
+	// Always write back the file if any keys were processed
 	if removedCount > 0 {
-		// Marshal back to JSON with proper formatting
 		updatedData, err := json.MarshalIndent(jsonObj, "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed to marshal JSON: %v", err)
 		}
 
-		// Write back to file
 		if err := os.WriteFile(filePath, updatedData, 0644); err != nil {
 			return fmt.Errorf("failed to write JSON file: %v", err)
 		}
 
-		fmt.Printf("✅ Removed %d unused keys from %s\n", removedCount, filePath)
+		fmt.Printf("✅ Removed %d unused keys from %s (size: %d -> %d bytes)\n",
+			removedCount, filePath, originalSize, len(updatedData))
 	}
 
 	return nil
