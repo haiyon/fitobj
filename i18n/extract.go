@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strings"
 
 	"github.com/haiyon/fitobj/fitter"
 )
@@ -26,7 +28,10 @@ func ExtractKeysFromFile(filePath string) (map[string]bool, error) {
 	matches := tPattern.FindAllSubmatch(content, -1)
 	for _, match := range matches {
 		if len(match) >= 2 {
-			keys[string(match[1])] = true
+			key := strings.TrimSpace(string(match[1]))
+			if key != "" {
+				keys[key] = true
+			}
 		}
 	}
 
@@ -42,7 +47,16 @@ func ExtractKeysFromDir(rootDir string) (map[string]bool, error) {
 			return err
 		}
 
-		if !d.IsDir() {
+		// Skip hidden directories and files
+		if strings.HasPrefix(d.Name(), ".") {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Only process text-like files
+		if !d.IsDir() && isTextFile(path) {
 			fileKeys, err := ExtractKeysFromFile(path)
 			if err != nil {
 				return err
@@ -59,6 +73,25 @@ func ExtractKeysFromDir(rootDir string) (map[string]bool, error) {
 	return keys, err
 }
 
+// isTextFile checks if a file is likely a text file based on its extension
+func isTextFile(filePath string) bool {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	textExts := []string{
+		".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte",
+		".py", ".rb", ".php", ".java", ".kt", ".go",
+		".html", ".htm", ".xml", ".css", ".scss", ".sass",
+		".md", ".txt", ".json", ".yaml", ".yml",
+	}
+
+	for _, textExt := range textExts {
+		if ext == textExt {
+			return true
+		}
+	}
+
+	return false
+}
+
 // ExtractKeysFromJSON extracts all keys from a JSON file using flattening
 func ExtractKeysFromJSON(filePath string) (map[string]bool, error) {
 	keys := make(map[string]bool)
@@ -66,6 +99,10 @@ func ExtractKeysFromJSON(filePath string) (map[string]bool, error) {
 	jsonData, err := os.ReadFile(filePath)
 	if err != nil {
 		return keys, fmt.Errorf("failed to read JSON file: %v", err)
+	}
+
+	if len(jsonData) == 0 {
+		return keys, nil
 	}
 
 	var jsonObj map[string]any
@@ -103,7 +140,8 @@ func ExtractKeysFromJSONDir(jsonPath string) (map[string]bool, error) {
 				fullPath := filepath.Join(jsonPath, entry.Name())
 				jsonKeys, err := ExtractKeysFromJSON(fullPath)
 				if err != nil {
-					return keys, err
+					fmt.Printf("Warning: Failed to process %s: %v\n", fullPath, err)
+					continue
 				}
 
 				for key := range jsonKeys {
@@ -140,6 +178,10 @@ func CompareKeys(sourceKeys, jsonKeys map[string]bool) ([]string, []string) {
 			unusedInSource = append(unusedInSource, key)
 		}
 	}
+
+	// Sort for consistent output
+	sort.Strings(missingInJSON)
+	sort.Strings(unusedInSource)
 
 	return missingInJSON, unusedInSource
 }
@@ -206,18 +248,25 @@ func splitKeyPath(keyPath, separator string) []string {
 		return []string{}
 	}
 
+	if separator == "." {
+		return strings.Split(keyPath, separator)
+	}
+
+	// Handle custom separators
 	var parts []string
 	current := ""
+	sepLen := len(separator)
 
-	for i := 0; i < len(keyPath); i++ {
-		if i+len(separator) <= len(keyPath) && keyPath[i:i+len(separator)] == separator {
+	for i := 0; i < len(keyPath); {
+		if i+sepLen <= len(keyPath) && keyPath[i:i+sepLen] == separator {
 			if current != "" {
 				parts = append(parts, current)
 				current = ""
 			}
-			i += len(separator) - 1
+			i += sepLen
 		} else {
 			current += string(keyPath[i])
+			i++
 		}
 	}
 
@@ -269,12 +318,15 @@ func cleanupJSONFile(filePath string, unusedKeys []string, separator string) err
 		return fmt.Errorf("failed to read JSON file: %v", err)
 	}
 
+	if len(jsonData) == 0 {
+		return nil // Skip empty files
+	}
+
 	var jsonObj map[string]any
 	if err := json.Unmarshal(jsonData, &jsonObj); err != nil {
 		return fmt.Errorf("failed to parse JSON: %v", err)
 	}
 
-	// Create a copy for modification
 	originalSize := len(jsonData)
 	removedCount := 0
 
@@ -284,7 +336,6 @@ func cleanupJSONFile(filePath string, unusedKeys []string, separator string) err
 		}
 	}
 
-	// Always write back the file if any keys were processed
 	if removedCount > 0 {
 		updatedData, err := json.MarshalIndent(jsonObj, "", "  ")
 		if err != nil {

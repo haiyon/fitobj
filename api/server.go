@@ -10,11 +10,8 @@ import (
 
 // Options configures the API server behavior
 type Options struct {
-	// Port to run the server on
-	Port string
-	// FlattenOpts contains options for the flatten operation
-	FlattenOpts fitter.FlattenOptions
-	// UnflattenOpts contains options for the unflatten operation
+	Port          string
+	FlattenOpts   fitter.FlattenOptions
 	UnflattenOpts fitter.UnflattenOptions
 }
 
@@ -27,66 +24,57 @@ func DefaultOptions() Options {
 	}
 }
 
-// Request defines the structure for API requests.
+// Request defines the structure for API requests
 type Request struct {
-	Data        map[string]any `json:"data"`                  // JSON data to process
-	Reverse     bool           `json:"reverse"`               // Whether to reverse the transformation
-	Separator   string         `json:"separator,omitempty"`   // Custom separator (optional)
-	ArrayFormat string         `json:"arrayFormat,omitempty"` // Array format: "index" or "bracket" (optional)
+	Data        map[string]any `json:"data"`
+	Reverse     bool           `json:"reverse"`
+	Separator   string         `json:"separator,omitempty"`
+	ArrayFormat string         `json:"arrayFormat,omitempty"`
 }
 
-// Response defines the structure for API responses.
+// Response defines the structure for API responses
 type Response struct {
-	Data    map[string]any `json:"data"`              // Processed JSON data
-	Success bool           `json:"success"`           // Whether the operation was successful
-	Message string         `json:"message,omitempty"` // Error message, if any
+	Data    map[string]any `json:"data"`
+	Success bool           `json:"success"`
+	Message string         `json:"message,omitempty"`
 }
 
-// server holds the configuration for the API server
+// ErrorResponse defines the structure for error responses
+type ErrorResponse struct {
+	Success bool   `json:"success"`
+	Error   string `json:"error"`
+}
+
 type server struct {
 	options Options
 }
 
-// newServer creates a new server with the given options
 func newServer(options Options) *server {
-	return &server{
-		options: options,
-	}
+	return &server{options: options}
 }
 
-// ProcessHandler handles API requests to process JSON data.
+// ProcessHandler handles API requests to process JSON data
 func (s *server) ProcessHandler(w http.ResponseWriter, r *http.Request) {
-	// Only allow POST method
 	if r.Method != http.MethodPost {
-		http.Error(w, "Only POST method is supported", http.StatusMethodNotAllowed)
+		s.sendError(w, "Only POST method is supported", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Parse request body
 	var request Request
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&request); err != nil {
-		http.Error(w, "Failed to parse request body", http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		s.sendError(w, "Failed to parse request body", http.StatusBadRequest)
 		return
 	}
 
-	// Check if data is provided
 	if request.Data == nil {
-		http.Error(w, "No data provided in request", http.StatusBadRequest)
+		s.sendError(w, "No data provided in request", http.StatusBadRequest)
 		return
 	}
 
-	// Create a copy of the options to avoid modifying the server's defaults
-	flattenOpts := fitter.DefaultFlattenOptions()
-	flattenOpts.Separator = s.options.FlattenOpts.Separator
-	flattenOpts.ArrayFormatting = s.options.FlattenOpts.ArrayFormatting
-	flattenOpts.BufferSize = s.options.FlattenOpts.BufferSize
-	unflattenOpts := fitter.DefaultUnflattenOptions()
-	unflattenOpts.Separator = s.options.UnflattenOpts.Separator
-	unflattenOpts.SupportBracketNotation = s.options.UnflattenOpts.SupportBracketNotation
-	unflattenOpts.BufferSize = s.options.UnflattenOpts.BufferSize
+	// Create options copies
+	flattenOpts := s.options.FlattenOpts
+	unflattenOpts := s.options.UnflattenOpts
 
-	// Message variable
 	var message string
 
 	// Apply custom options if provided
@@ -100,59 +88,68 @@ func (s *server) ProcessHandler(w http.ResponseWriter, r *http.Request) {
 			flattenOpts.ArrayFormatting = request.ArrayFormat
 			unflattenOpts.SupportBracketNotation = request.ArrayFormat == "bracket"
 		} else {
-			// Invalid array format, use default and add warning
 			message = "Warning: Invalid array format specified, using default ('index')."
 		}
 	}
 
 	// Process the data
 	var result map[string]any
-
 	if request.Reverse {
-		// For unflattening, pass the data directly
 		result = fitter.UnflattenMapWithOptions(request.Data, unflattenOpts)
 	} else {
-		// For flattening, pass empty string as prefix (this is crucial)
 		result = fitter.FlattenMapWithOptions(request.Data, "", flattenOpts)
 	}
 
-	// Prepare and send response
+	// Send response
 	response := Response{
 		Data:    result,
 		Success: true,
 		Message: message,
 	}
 
-	// Set proper content type and encode response
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-		return
+		s.sendError(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
 
-// StartServer starts the API server on the specified port.
+func (s *server) sendError(w http.ResponseWriter, message string, statusCode int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(ErrorResponse{
+		Success: false,
+		Error:   message,
+	})
+}
+
+// StartServer starts the API server on the specified port
 func StartServer(port string) error {
 	options := DefaultOptions()
 	options.Port = port
 	return StartServerWithOptions(options)
 }
 
-// StartServerWithOptions starts the API server with custom options.
+// StartServerWithOptions starts the API server with custom options
 func StartServerWithOptions(options Options) error {
+	// Ensure proper defaults
 	if options.FlattenOpts.MaxDepth == 0 {
 		options.FlattenOpts.MaxDepth = -1
 	}
 	if !options.FlattenOpts.IncludeArrayIndices {
 		options.FlattenOpts.IncludeArrayIndices = true
 	}
+
 	s := newServer(options)
 
 	// Register handlers
 	http.HandleFunc("/process", s.ProcessHandler)
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
 
-	// Start server
 	fmt.Printf("API server running at http://localhost:%s/process\n", options.Port)
+	fmt.Printf("Health check available at http://localhost:%s/health\n", options.Port)
 	fmt.Printf("Using separator: '%s', array format: '%s'\n",
 		options.FlattenOpts.Separator,
 		options.FlattenOpts.ArrayFormatting)

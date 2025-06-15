@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/haiyon/fitobj/fitter"
 	"github.com/haiyon/fitobj/utils"
@@ -13,46 +14,26 @@ import (
 
 // Options configures the file processing behavior
 type Options struct {
-	// Workers is the number of worker goroutines for parallel processing
-	Workers int
-	// FlattenOpts contains options for the flatten operation
-	FlattenOpts fitter.FlattenOptions
-	// UnflattenOpts contains options for the unflatten operation
+	Workers       int
+	FlattenOpts   fitter.FlattenOptions
 	UnflattenOpts fitter.UnflattenOptions
 }
 
 // DefaultOptions returns the default options for processing
 func DefaultOptions() Options {
 	return Options{
-		Workers:       4, // Default to 4 workers
+		Workers:       4,
 		FlattenOpts:   fitter.DefaultFlattenOptions(),
 		UnflattenOpts: fitter.DefaultUnflattenOptions(),
 	}
 }
 
-// ProcessFile processes a single JSON file by either flattening or unflattening it.
-//
-// Parameters:
-// - inputPath: Path to the input JSON file
-// - outputPath: Path to write the output JSON file
-// - unflatten: Whether to unflatten (true) or flatten (false) the JSON
-//
-// Returns:
-// - Error if any
+// ProcessFile processes a single JSON file
 func ProcessFile(inputPath, outputPath string, unflatten bool) error {
 	return ProcessFileWithOptions(inputPath, outputPath, unflatten, DefaultOptions())
 }
 
-// ProcessFileWithOptions processes a single JSON file with custom options.
-//
-// Parameters:
-// - inputPath: Path to the input JSON file
-// - outputPath: Path to write the output JSON file
-// - unflatten: Whether to unflatten (true) or flatten (false) the JSON
-// - options: Configuration options for processing
-//
-// Returns:
-// - Error if any
+// ProcessFileWithOptions processes a single JSON file with custom options
 func ProcessFileWithOptions(inputPath, outputPath string, unflatten bool, options Options) error {
 	// Read and parse the input JSON file
 	jsonData, err := utils.ReadJSONFile(inputPath)
@@ -62,11 +43,8 @@ func ProcessFileWithOptions(inputPath, outputPath string, unflatten bool, option
 
 	var processedData map[string]any
 	if unflatten {
-		// Unflatten the JSON structure
 		processedData = fitter.UnflattenMapWithOptions(jsonData, options.UnflattenOpts)
 	} else {
-		// Flatten the JSON structure
-		// Make sure to pass an empty string as the prefix for root level flattening
 		processedData = fitter.FlattenMapWithOptions(jsonData, "", options.FlattenOpts)
 	}
 
@@ -78,29 +56,12 @@ func ProcessFileWithOptions(inputPath, outputPath string, unflatten bool, option
 	return nil
 }
 
-// ProcessDirectory processes all JSON files in a directory.
-//
-// Parameters:
-// - inputDir: Path to the directory containing input JSON files
-// - outputDir: Path to the directory to write output JSON files
-// - unflatten: Whether to unflatten (true) or flatten (false) the JSON files
-//
-// Returns:
-// - Error if any
+// ProcessDirectory processes all JSON files in a directory
 func ProcessDirectory(inputDir, outputDir string, unflatten bool) error {
 	return ProcessDirectoryWithOptions(inputDir, outputDir, unflatten, DefaultOptions())
 }
 
-// ProcessDirectoryWithOptions processes all JSON files in a directory with custom options.
-//
-// Parameters:
-// - inputDir: Path to the directory containing input JSON files
-// - outputDir: Path to the directory to write output JSON files
-// - unflatten: Whether to unflatten (true) or flatten (false) the JSON files
-// - options: Configuration options for processing
-//
-// Returns:
-// - Error if any
+// ProcessDirectoryWithOptions processes all JSON files in a directory with custom options
 func ProcessDirectoryWithOptions(inputDir, outputDir string, unflatten bool, options Options) error {
 	// Validate input directory
 	inputInfo, err := os.Stat(inputDir)
@@ -141,19 +102,15 @@ func ProcessDirectoryWithOptions(inputDir, outputDir string, unflatten bool, opt
 		numWorkers = 1
 	}
 
-	// Create a channel to distribute work
+	// Create channels
 	filesChan := make(chan string, len(jsonFiles))
+	resultsChan := make(chan ProcessResult, len(jsonFiles))
 
-	// Create a channel to collect results
-	resultsChan := make(chan struct {
-		filename string
-		err      error
-	}, len(jsonFiles))
-
-	// Create a wait group to wait for all workers
-	var wg sync.WaitGroup
+	// Counters for progress tracking
+	var processed, failed int64
 
 	// Start worker goroutines
+	var wg sync.WaitGroup
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func() {
@@ -164,39 +121,41 @@ func ProcessDirectoryWithOptions(inputDir, outputDir string, unflatten bool, opt
 
 				err := ProcessFileWithOptions(inputPath, outputPath, unflatten, options)
 
-				resultsChan <- struct {
-					filename string
-					err      error
-				}{file, err}
+				result := ProcessResult{Filename: file, Error: err}
+				resultsChan <- result
+
+				if err != nil {
+					atomic.AddInt64(&failed, 1)
+				} else {
+					atomic.AddInt64(&processed, 1)
+				}
 			}
 		}()
 	}
 
-	// Send files to the workers
+	// Send files to workers
 	for _, file := range jsonFiles {
 		filesChan <- file
 	}
 	close(filesChan)
 
-	// Create a goroutine to close the results channel when all workers are done
+	// Close results channel when all workers are done
 	go func() {
 		wg.Wait()
 		close(resultsChan)
 	}()
 
-	// Process results as they come in
-	successCount := 0
-	errorCount := 0
-
+	// Process results
 	for result := range resultsChan {
-		if result.err != nil {
-			fmt.Printf("Error processing file '%s': %v\n", result.filename, result.err)
-			errorCount++
+		if result.Error != nil {
+			fmt.Printf("Error processing file '%s': %v\n", result.Filename, result.Error)
 		} else {
-			fmt.Printf("Processed: %s\n", result.filename)
-			successCount++
+			fmt.Printf("Processed: %s\n", result.Filename)
 		}
 	}
+
+	successCount := atomic.LoadInt64(&processed)
+	errorCount := atomic.LoadInt64(&failed)
 
 	fmt.Printf("Processing completed. Processed %d files (%d successful, %d failed)\n",
 		len(jsonFiles), successCount, errorCount)
@@ -206,4 +165,10 @@ func ProcessDirectoryWithOptions(inputDir, outputDir string, unflatten bool, opt
 	}
 
 	return nil
+}
+
+// ProcessResult represents the result of processing a single file
+type ProcessResult struct {
+	Filename string
+	Error    error
 }
